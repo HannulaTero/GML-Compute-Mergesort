@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"script_compute_mergesort_v3",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"script_compute_mergesort_v3",
+  "parent":{
+    "name":"Compute_Mergesort",
+    "path":"Compute_Mergesort.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
