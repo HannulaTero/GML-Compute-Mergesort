@@ -1,5 +1,9 @@
+/*
+  
+  This implementation is similar to previous implementation, but it also tries optimize first passes,
+  which can be done within shared workgroup memory.
 
-
+*/
 /// @func ComputeMergesortV4(_params);
 /// @desc Does parallel mergesort with compute shaders.
 /// @param {Struct} _params Check constructor for accepted parameters.
@@ -11,7 +15,7 @@ function ComputeMergesortV4(_params={}) constructor
   /// @returns {Struct.GPUBuffer} Output is created 
   static Dispatch = function(_params)
   {
-    // Preparations.
+    // Read parameters.
     var _src = _params[$ "src"]; // Input storage buffer.
     var _dst = _params[$ "dst"]; // Output storage buffer.
     var _aux = _params[$ "aux"]; // Helper storage buffer, auxillary.
@@ -19,8 +23,14 @@ function ComputeMergesortV4(_params={}) constructor
     var _itemOffset = _params[$ "offset"];
     var _itemCount = _params[$ "count"];
     var _callback = _params[$ "callback"];
+    
+    // Preparations.
     var _auxTemporary = false;
     var _alignment = 256;
+    var _passCount = ceil(log2(_itemCount));
+    var _byteCount = _itemCount * self.dsize;
+    var _byteOffset = _itemOffset * self.dsize;
+    var _workgroupCount = ceil(_itemCount * 0.5 / self.workgroupSize);
     
     // Output is required.
     if (_src == undefined)
@@ -31,9 +41,6 @@ function ComputeMergesortV4(_params={}) constructor
     // Output must be power of 2.
     _itemOffset ??= 0;
     _itemCount ??= ceil(_src.size / self.dsize) - _itemOffset;
-    var _passCount = ceil(log2(_itemCount));
-    var _byteCount = _itemCount * self.dsize;
-    var _byteOffset = _itemOffset * self.dsize;
     if (_itemCount != power(2, _passCount))
     {
       throw("Input count needs to be power of 2!");
@@ -50,7 +57,7 @@ function ComputeMergesortV4(_params={}) constructor
       size: _byteCount, 
     });
     
-    // Mergesort requires auxillary buffer.
+    // Mergesort requires auxillary buffer. Basically for ping-ponging.
     if (_aux == undefined)
     {
       _auxTemporary = true;
@@ -64,7 +71,7 @@ function ComputeMergesortV4(_params={}) constructor
     // Create bindgroups for the dispatch.
     var _bindGroups = [
       self.device.createBindGroup({
-        label: "Mergesort Bindgroup[0]",
+        label: "Mergesort Bindgroup Global[0]",
         layout: self.bindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: self.uniformBuffer, size: 4 * 4 } },
@@ -73,7 +80,7 @@ function ComputeMergesortV4(_params={}) constructor
         ]
       }),
       self.device.createBindGroup({
-        label: "Mergesort Bindgroup[1]",
+        label: "Mergesort Bindgroup Global[1]",
         layout: self.bindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: self.uniformBuffer, size: 4 * 4 } },
@@ -98,12 +105,15 @@ function ComputeMergesortV4(_params={}) constructor
     
     // Begin the compute pass.
     var _pass = _encoder.beginComputePass();
-    _pass.setPipeline(self.pipelineCompute);
+    _pass.setBindGroup(0, _bindGroups[0], [ 0 ]);
+    _pass.setPipeline(self.pipelineComputeWorkgroup);
+    _pass.dispatchWorkgroups(_workgroupCount);
+    var _passesDone = ceil(log2(self.workgroupSize * 2));
     
     // Do the compute passes.
     // Each invocation handles two values, invocation count therefore is (itemCount/2).
-    var _workgroupCount = ceil(_itemCount * 0.5 / self.workgroupSize);
-    for(var i = 0; i < _passCount; i++)
+    _pass.setPipeline(self.pipelineComputeGlobal);
+    for(var i = _passesDone; i < _passCount; i++)
     {
       _pass.setBindGroup(0, _bindGroups[i % 2], [ i * _alignment ]);
       _pass.dispatchWorkgroups(_workgroupCount);
@@ -201,12 +211,23 @@ function ComputeMergesortV4(_params={}) constructor
   
   
   // Create compute pipeline.
-  self.pipelineCompute = device.createComputePipeline({
+  self.pipelineComputeWorkgroup = device.createComputePipeline({
     label: "Mergesort Pipeline",
     layout: self.pipelineLayout,
     compute: {
       module: self.shaderModule,
-      entrypoint: "computeMerge"
+      entryPoint: "computeMergeWorkgroup"
+    }
+  });
+  
+  
+  // Create compute pipeline.
+  self.pipelineComputeGlobal = device.createComputePipeline({
+    label: "Mergesort Pipeline",
+    layout: self.pipelineLayout,
+    compute: {
+      module: self.shaderModule,
+      entryPoint: "computeMergeGlobal"
     }
   });
   
@@ -255,19 +276,102 @@ function ComputeMergesortV4(_params={}) constructor
     @group(0) @binding(2) var <storage, read_write> dstBuff: array<{{DATATYPE}}>;
     
     
+    const workgroupSize = {{WORKGROUP_SIZE}}; // Count of invocations in workgroup.
+    const workItemCount = workgroupSize * 2; // Each invocation handles two items.
+    var<workgroup> auxBuff : array<{{DATATYPE}}, workItemCount>;
+    
+    
+    
     // Compue shader for workgroup-sized sublists.
     @compute 
-    @workgroup_size({{WORKGROUP_SIZE}})
-    fn computeMerge(@builtin(global_invocation_id) id : vec3u)
+    @workgroup_size(workgroupSize)
+    fn computeMergeWorkgroup(
+      @builtin(global_invocation_id) gid : vec3u,
+      @builtin(local_invocation_id) lid : vec3u,
+      @builtin(workgroup_id) wid : vec3u,
+    )
     {
+      // Fill the aux-buffer.
+      // There are 2 values for each invocation.
+      let invocIndex = i32(lid.x);
+      let globalStart = i32(wid.x) * workItemCount;
+      auxBuff[invocIndex * 2 + 0] = srcBuff[globalStart + invocIndex * 2 + 0];
+      auxBuff[invocIndex * 2 + 1] = srcBuff[globalStart + invocIndex * 2 + 1];
+      workgroupBarrier();
+      
+      // Iterate through as many passes as possible with the workgroup.
+      for(var localSize : i32 = 1; localSize <= workgroupSize; localSize *= 2)
+      {
+        // Preparations.
+        let groupIndex : i32 = invocIndex / localSize;
+        let groupStart : i32 = groupIndex * localSize * 2;
+        let localIndex : i32 = invocIndex - groupIndex * localSize;
+        let lhsLower : i32 = groupStart;
+        let rhsLower : i32 = groupStart + localSize;
+        let lhsIndex : i32 = lhsLower + localIndex;
+        let rhsIndex : i32 = rhsLower + localIndex;
+        let lhsUpper : i32 = rhsLower - 1;
+        let rhsUpper : i32 = lhsUpper + localSize;
+        workgroupBarrier();
+      
+      
+        // Binary search position for LHS-value in the RHS-sublist.
+        var lhsValue = auxBuff[lhsIndex];
+        var lower : i32 = rhsLower;
+        var upper : i32 = rhsUpper;
+        while(lower <= upper)
+        {
+          var middle = lower + ((upper - lower) >> 1);
+          if (lhsValue{{ACCESS}} > auxBuff[middle]{{ACCESS}})
+          {
+            lower = middle + 1;
+          }
+          else
+          {
+            upper = middle - 1;
+          }
+        }
+        var lhsOffset : i32 = (lower - rhsLower);
+        
+        
+        // Binary search position for RHS-value in the LHS-sublist.
+        var rhsValue = auxBuff[rhsIndex];
+        lower = lhsLower;
+        upper = lhsUpper;
+        while(lower <= upper)
+        {
+          var middle = lower + ((upper - lower) >> 1);
+          if (rhsValue{{ACCESS}} >= auxBuff[middle]{{ACCESS}})
+          {
+            lower = middle + 1;
+          }
+          else
+          {
+            upper = middle - 1;
+          }
+        }
+        var rhsOffset : i32 = (lower - lhsLower);
+        
+      
+        // Place the RHS item into found position.
+        workgroupBarrier();
+        auxBuff[groupStart + localIndex + lhsOffset] = lhsValue;
+        auxBuff[groupStart + localIndex + rhsOffset] = rhsValue;
+        workgroupBarrier();
+      }
+      
+      // Use aux-buffer to update destination.
+      workgroupBarrier();
+      dstBuff[globalStart + invocIndex * 2 + 0] = auxBuff[invocIndex * 2 + 0];
+      dstBuff[globalStart + invocIndex * 2 + 1] = auxBuff[invocIndex * 2 + 1];
     }
     
     
     
     // Compute shader for global passes.
     @compute 
-    @workgroup_size({{WORKGROUP_SIZE}})
-    fn computeMerge(@builtin(global_invocation_id) id : vec3u)
+    @workgroup_size(workgroupSize)
+    fn computeMergeGlobal(@builtin(global_invocation_id) id : vec3u)
     {
       // Preparations.
       let invocIndex = i32(id.x);
@@ -303,7 +407,7 @@ function ComputeMergesortV4(_params={}) constructor
       dstBuff[groupStart + localIndex + offset] = value;
       
       
-      // Get range for looking in LHS lst.
+      // Get range for looking in LHS list.
       // We can use knowledge from previous binary search to prune the range.
       lower = lhsStart + (lower - rhsStart);
       

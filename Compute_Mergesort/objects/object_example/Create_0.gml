@@ -1,9 +1,12 @@
 
+
+
 y = 0;
-itemCount = 1024 * 1024;
+ylerp = 0;
+itemCount = (1 << 20);
 inputRange = [ 0.0, 999.0 ];
-timeSummation = 0;
-timeIteration = 0;
+times = [];
+timesMaxCount = 1024;
 
 
 
@@ -20,7 +23,7 @@ buffer.output = buffer_create(buffer.bytes, buffer_fixed, 1);
 // Declare Control and debug.
 // Defined in user event 0.
 slice = {};
-slice.count = min(256, itemCount);
+slice.count = min(512, itemCount);
 slice.index = [];
 slice.input = [];
 slice.output = [];
@@ -38,10 +41,10 @@ control.TimeEnd = undefined;
 // Mergesort compute.
 // Defined in user event 1.
 compute = {}; 
+compute.Execute = undefined;
 
 
 // Define.
 event_perform(ev_other, ev_user0);
 event_perform(ev_other, ev_user1);
-
 

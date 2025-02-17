@@ -1,9 +1,9 @@
 {
   "$GMScript":"v1",
-  "%Name":"script_compute_mergesort_v1",
+  "%Name":"script_compute_mergesort_simpler",
   "isCompatibility":false,
   "isDnD":false,
-  "name":"script_compute_mergesort_v1",
+  "name":"script_compute_mergesort_simpler",
   "parent":{
     "name":"Compute_Mergesort",
     "path":"Compute_Mergesort.yyp",

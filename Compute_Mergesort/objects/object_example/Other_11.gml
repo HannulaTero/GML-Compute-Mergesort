@@ -1,12 +1,12 @@
 /// @desc DEFINE MERGESORT COMPUTE.
 
+
 compute.adapter = GPU.requestAdapter();
 compute.device = compute.adapter.requestDevice();
-compute.mergesortV1 = new ComputeMergesortV1({ device : compute.device });
+compute.mergesortV1 = new ComputeMergesortSimpler();
 compute.mergesortV2 = new ComputeMergesortV2({ device : compute.device });
 compute.mergesortV3 = new ComputeMergesortV3({ device : compute.device });
 compute.mergesortV4 = new ComputeMergesortV4({ device : compute.device });
-//compute.mergesortV5 = new ComputeMergesortV5({ device : compute.device });
 
 
 // Create GPU input and output buffers.
@@ -50,10 +50,10 @@ compute.Execute = function(_sorter=compute.mergesortV1)
     return;
   }
   
-  
+  // Start dispatching mergesort.
+  // First move inputs from CPU to GPU.
   control.Log($"Dispatching Mergesort...");
-  
-  // Move inputs from CPU to GPU.
+  control.TimerBegin("Callback time");
   control.TimerBegin("Time of full dispatch");
   control.TimerBegin("Move inputs to GPU");
   compute.device.queue.writeBuffer(compute.input, 0, buffer.input, 0, buffer.bytes);
@@ -71,9 +71,11 @@ compute.Execute = function(_sorter=compute.mergesortV1)
     callback: function()
     {
       show_debug_message("Callback called!");
+      object_example.control.TimerEnd();
     }
   });
   control.TimerEnd();
+  
   
   // Read the results.
   control.TimerBegin("Map outputs for reading");
@@ -109,7 +111,14 @@ compute.Execute = function(_sorter=compute.mergesortV1)
     _buffer.getMappedRange().toBuffer(buffer.output, 0, buffer.bytes, 0);
     _buffer.unmap();
     control.TimerEnd();
-    control.TimerEnd();
+    
+    // Push total time to array for average.
+    array_push(times, control.TimerEnd());
+    if (array_length(times) > timesMaxCount)
+    {
+      array_shift(times);
+    }
+    
   
     // Get the results.
     control.Log($"Dispatching mergesort finished!");

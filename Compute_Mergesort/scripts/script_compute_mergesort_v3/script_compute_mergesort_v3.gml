@@ -1,5 +1,14 @@
+/*
 
+  This implementation makes uniform buffer for each possible pass,
+  to reduce data movement between CPU and GPU. This utilies dynamic ofset.
+  
+  Secondly, in this implementation each invocation handles two values (LHS and RHS sublists).
+  By finding position for LHS-value in RHS-sublist, there is information where RHS-value 
+  can't be in LHS-list, which can be utilized when doing binary search.
+  This implementation therefore reduces upper or lower range of binary search for second value.
 
+*/
 /// @func ComputeMergesortV3(_params);
 /// @desc Does parallel mergesort with compute shaders.
 /// @param {Struct} _params Check constructor for accepted parameters.
@@ -206,7 +215,7 @@ function ComputeMergesortV3(_params={}) constructor
     layout: self.pipelineLayout,
     compute: {
       module: self.shaderModule,
-      entrypoint: "computeMerge"
+      entryPoint: "computeMerge"
     }
   });
   
@@ -294,7 +303,7 @@ function ComputeMergesortV3(_params={}) constructor
       dstBuff[groupStart + localIndex + offset] = value;
       
       
-      // Get range for looking in LHS lst.
+      // Get range for looking in LHS list.
       // We can use knowledge from previous binary search to prune the range.
       lower = lhsStart + (lower - rhsStart);
       

@@ -83,6 +83,7 @@ control.TimerEnd = function()
   var _length = string_length(_timer.message);
   var _timeStr = string_format(_time, 32 - _length, 2);
   control.Log($"    {_timer.message}{_timeStr} ms");
+  return _time;
 };
 
 

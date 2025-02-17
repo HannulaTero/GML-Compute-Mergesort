@@ -24,7 +24,7 @@
     {"id":{"name":"object_example_simpler","path":"objects/object_example_simpler/object_example_simpler.yy",},},
     {"id":{"name":"object_example","path":"objects/object_example/object_example.yy",},},
     {"id":{"name":"room_example","path":"rooms/room_example/room_example.yy",},},
-    {"id":{"name":"script_compute_mergesort_v1","path":"scripts/script_compute_mergesort_v1/script_compute_mergesort_v1.yy",},},
+    {"id":{"name":"script_compute_mergesort_simpler","path":"scripts/script_compute_mergesort_simpler/script_compute_mergesort_simpler.yy",},},
     {"id":{"name":"script_compute_mergesort_v2","path":"scripts/script_compute_mergesort_v2/script_compute_mergesort_v2.yy",},},
     {"id":{"name":"script_compute_mergesort_v3","path":"scripts/script_compute_mergesort_v3/script_compute_mergesort_v3.yy",},},
     {"id":{"name":"script_compute_mergesort_v4","path":"scripts/script_compute_mergesort_v4/script_compute_mergesort_v4.yy",},},

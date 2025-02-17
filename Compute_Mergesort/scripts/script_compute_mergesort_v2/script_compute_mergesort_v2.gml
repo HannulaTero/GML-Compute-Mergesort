@@ -211,7 +211,7 @@ function ComputeMergesortV2(_params={}) constructor
     layout: self.pipelineLayout,
     compute: {
       module: self.shaderModule,
-      entrypoint: "computeMerge"
+      entryPoint: "computeMerge"
     }
   });
   
